@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Space Shooter — Enhanced with Music</title>
+<style>
+  html,body{height:100%;margin:0;background:#000;color:#fff;font-family:Arial,Helvetica,sans-serif;overflow:hidden}
+  #wrap{
+    height:100%;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    position:relative;
+  }
+  #game-container {
+    position: relative;
+    width: 100%;
+    max-width: 800px;
+    max-height: 600px;
+    aspect-ratio: 4/3;
+  }
+  canvas{
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: radial-gradient(circle at 30% 10%, #071028 0%, #000 40%);
+    border: 1px solid #111;
+  }
+  .overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.85);z-index:50}
+  .panel{background:linear-gradient(180deg,#041326,#00121a);padding:20px;border-radius:12px;min-width:320px;text-align:center}
+  input{padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.06);width:90%;box-sizing:border-box}
+  button{margin-top:12px;padding:10px 16px;border-radius:8px;border:none;cursor:pointer;background:#3bd7ff;color:#002;font-weight:700}
+  .small{padding:8px 12px}
+  #leaderboardBox{max-height:280px;overflow:auto;margin-top:12px;background:rgba(255,255,255,0.02);padding:10px;border-radius:8px;text-align:left}
+  .audio-controls {
+    position: absolute;
+    bottom: 10px;
+    right: 10px;
+    z-index: 100;
+    display: flex;
+    gap: 8px;
+  }
+  .audio-btn {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 50%;
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: white;
+    font-size: 18px;
+  }
+  .audio-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+  }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="game-container">
+    <canvas id="game" width="800" height="600"></canvas>
+  </div>
+  <div class="audio-controls">
+    <div class="audio-btn" id="bgMusicToggle" title="Toggle background music">♫</div>
+    <div class="audio-btn" id="sfxToggle" title="Toggle sound effects">♪</div>
+  </div>
+</div>
+
+<div id="startOverlay" class="overlay">
+  <div class="panel">
+    <h2 style="margin:0 0 8px;color:#7cf9ff">Space Shooter</h2>
+    <input id="name" placeholder="Enter name (max 20 chars)" maxlength="20">
+    <div style="font-size:13px;margin-top:8px;opacity:0.9">Controls: Arrow keys = move · Space = shoot</div>
+    <div style="margin-top:12px"><button id="btnStart">Start Game</button></div>
+  </div>
+</div>
+
+<div id="gameOverOverlay" class="overlay" style="display:none">
+  <div class="panel">
+    <h2 id="goTitle" style="margin:0 0 8px;color:#ff9e9e">Game Over</h2>
+    <div id="finalScore" style="margin-bottom:8px"></div>
+    <div id="leaderboardBox"></div>
+    <div style="margin-top:12px">
+      <button id="btnRestart" class="small">Play Again</button>
+    </div>
+  </div>
+</div>
+
+<!-- Audio elements -->
+<audio id="bgMusic" loop>
+  <source src="assets/music2.mp3" type="audio/mpeg">
+</audio>
+<audio id="shootSound">
+  <source src="assets/gunfire.mp3" type="audio/mpeg">
+</audio>
+<audio id="explosionSound">
+  <source src="assets/explosion.mp3" type="audio/mpeg">
+</audio>
+<audio id="bossSound">
+  <source src="assets/boss.mp3" type="audio/mpeg">
+</audio>
+<audio id="gameOverSound">
+  <source src="assets/gameover.mp3" type="audio/mpeg">
+</audio>
+
+<script>
+(() => {
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const startOverlay = document.getElementById('startOverlay');
+const gameOverOverlay = document.getElementById('gameOverOverlay');
+const nameInput = document.getElementById('name');
+const btnStart = document.getElementById('btnStart');
+const btnRestart = document.getElementById('btnRestart');
+const leaderboardBox = document.getElementById('leaderboardBox');
+const finalScore = document.getElementById('finalScore');
+
+// Audio elements
+const bgMusic = document.getElementById('bgMusic');
+const shootSound = document.getElementById('shootSound');
+const explosionSound = document.getElementById('explosionSound');
+const bossSound = document.getElementById('bossSound');
+const gameOverSound = document.getElementById('gameOverSound');
+const bgMusicToggle = document.getElementById('bgMusicToggle');
+const sfxToggle = document.getElementById('sfxToggle');
+
+// Audio settings
+let bgMusicEnabled = true;
+let sfxEnabled = true;
+
+// Set canvas size based on container
+const gameContainer = document.getElementById('game-container');
+function resizeCanvas() {
+  const containerWidth = gameContainer.clientWidth;
+  const containerHeight = gameContainer.clientHeight;
+  
+  // Maintain 4:3 aspect ratio
+  const aspectRatio = 4/3;
+  let newWidth, newHeight;
+  
+  if (containerWidth / containerHeight > aspectRatio) {
+    newHeight = containerHeight;
+    newWidth = containerHeight * aspectRatio;
+  } else {
+    newWidth = containerWidth;
+    newHeight = containerWidth / aspectRatio;
+  }
+  
+  canvas.style.width = newWidth + 'px';
+  canvas.style.height = newHeight + 'px';
+}
+
+// Initialize canvas size
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+// Game dimensions (logical size, not rendered size)
+const W = 800;
+const H = 600;
+
+let keys = {};
+let player, bullets, enemies, boss, bossBullets;
+let score, lastFire, lastWave, nextBossTime;
+let inBossFight, gameRunning;
+const fireInterval = 100; // faster fire
+const waveInterval = 600; // faster waves
+const bossIntervalMs = 120000; // 2 minutes
+const leaderboardKey = 'ss_leaderboard';
+
+function Player(){
+  this.w = Math.max(28, Math.round(W*0.045));
+  this.h = this.w;
+  this.x = Math.round((W - this.w)/2);
+  this.y = H - this.h - 16;
+  this.speed = Math.max(5, Math.round(W*0.006));
+  this.lives = 3;
+}
+Player.prototype.draw = function(){
+  ctx.fillStyle = '#08f';
+  ctx.beginPath();
+  ctx.moveTo(this.x + this.w/2, this.y);
+  ctx.lineTo(this.x, this.y + this.h);
+  ctx.lineTo(this.x + this.w, this.y + this.h);
+  ctx.closePath(); ctx.fill();
+}
+
+function Bullet(x,y){ 
+  this.x = x; 
+  this.y = y; 
+  this.w = Math.max(4,Math.round(W*0.006)); 
+  this.h = Math.max(10,Math.round(H*0.02)); 
+  this.spd = Math.max(12,Math.round(H*0.03)); 
+}
+Bullet.prototype.update = function(dt){ this.y -= this.spd * dt/16; }
+Bullet.prototype.draw = function(){ ctx.fillStyle = '#ffe86e'; ctx.fillRect(Math.round(this.x), Math.round(this.y), this.w, this.h); }
+
+function Enemy(x,y){
+  this.size = Math.max(28, Math.round(W*0.04));
+  this.x = x; this.y = y;
+  this.spd = 2 + Math.random()*2; // faster enemies
+}
+Enemy.prototype.update = function(dt){ this.y += this.spd * dt/16; return this.y > H + 20; }
+Enemy.prototype.draw = function(){ ctx.fillStyle = '#ff5a5a'; ctx.fillRect(Math.round(this.x), Math.round(this.y), this.size, this.size); }
+
+function Boss(){
+  this.w = Math.max(140, Math.round(W*0.18));
+  this.h = Math.max(72, Math.round(W*0.08));
+  this.x = Math.round((W - this.w)/2);
+  this.y = -this.h - 20;
+  this.spd = Math.max(1.2,Math.round(W*0.002));
+  this.hp = 20;
+  this.entering = true;
+  this.lastShot = 0;
+  this.shotInterval = 1100;
+}
+Boss.prototype.update = function(dt){
+  if(this.entering){
+    this.y += 2 * dt/16;
+    if(this.y >= 50){
+      this.y = 50;
+      this.entering = false;
+      this.lastShot = Date.now();
+    }
+    return;
+  }
+  const target = player.x + player.w/2;
+  const center = this.x + this.w/2;
+  const diff = target - center;
+  this.x += diff * 0.03;
+  this.x = Math.max(0, Math.min(W - this.w, this.x));
+  
+  if(Date.now() - this.lastShot > this.shotInterval){
+    this.lastShot = Date.now();
+    const leftX = this.x + Math.round(this.w*0.18);
+    const rightX = this.x + Math.round(this.w*0.82);
+    bossBullets.push({x:leftX, y:this.y+this.h, r:Math.max(14,Math.round(W*0.02)), spd:Math.max(3,Math.round(H*0.01))});
+    bossBullets.push({x:rightX, y:this.y+this.h, r:Math.max(14,Math.round(W*0.02)), spd:Math.max(3,Math.round(H*0.01))});
+  }
+}
+Boss.prototype.draw = function(){
+  ctx.fillStyle = '#7b3fb3';
+  ctx.fillRect(Math.round(this.x), Math.round(this.y), this.w, this.h);
+  ctx.fillStyle='#fff';
+  ctx.font='14px Arial';
+  ctx.fillText('BOSS HP: '+this.hp, Math.round(this.x+8), Math.round(this.y-8));
+  ctx.fillStyle='#ffd36b';
+  ctx.fillRect(Math.round(this.x+8), Math.round(this.y+this.h+8), Math.round((this.w-16)*(this.hp/20)), 8);
+  ctx.strokeStyle='#222';
+  ctx.strokeRect(Math.round(this.x+8), Math.round(this.y+this.h+8), Math.round(this.w-16), 8);
+}
+
+function clearAll(){ bullets.length=0; enemies.length=0; boss = null; bossBullets.length=0; }
+
+function spawnWave(){
+  const base = 8;
+  const bonus = Math.floor(score/100);
+  const count = base + bonus + Math.floor(Math.random()*5); // more enemies
+  for(let i=0;i<count;i++){
+    const x = Math.random()*(W - Math.max(28,Math.round(W*0.04)));
+    const y = - (10 + Math.random()*200);
+    enemies.push(new Enemy(x,y));
+  }
+}
+
+function rectOverlap(a,b){ return a.x < b.x + (b.w||b.size) && a.x + (a.w||a.size) > b.x && a.y < b.y + (b.h||b.size) && a.y + (a.h||a.size) > b.y; }
+
+function init(){ 
+  player = new Player(); bullets=[]; enemies=[]; boss=null; bossBullets=[]; 
+  score=0; lastFire=0; lastWave=0; nextBossTime = Date.now() + bossIntervalMs; 
+  inBossFight=false; gameRunning=true; 
+  
+  // Start background music
+  if (bgMusicEnabled) {
+    bgMusic.currentTime = 0;
+    bgMusic.play().catch(e => console.log("Audio play failed:", e));
+  }
+}
+
+function tryFire(now){ 
+  if(now - lastFire >= fireInterval){ 
+    bullets.push(new Bullet(player.x + Math.round(player.w/2) - Math.round(Math.max(4,Math.round(W*0.006))/2), player.y)); 
+    lastFire = now; 
+    
+    // Play shoot sound
+    if (sfxEnabled) {
+      shootSound.currentTime = 0;
+      shootSound.play().catch(e => console.log("Audio play failed:", e));
+    }
+  } 
+}
+
+function update(dt, now){ 
+  if(keys['ArrowLeft']) player.x -= player.speed * dt/16; 
+  if(keys['ArrowRight']) player.x += player.speed * dt/16; 
+  if(keys['ArrowUp']) player.y -= player.speed * dt/16; 
+  if(keys['ArrowDown']) player.y += player.speed * dt/16;
+  player.x = Math.max(0, Math.min(W - player.w, player.x)); 
+  player.y = Math.max(0, Math.min(H - player.h, player.y));
+
+  if(keys['Space']) tryFire(now); // fire while moving
+
+  for(let i=bullets.length-1;i>=0;i--){ bullets[i].update(dt); if(bullets[i].y + bullets[i].h < -10) bullets.splice(i,1); }
+
+  if(!inBossFight && now - lastWave > waveInterval){ spawnWave(); lastWave = now; }
+
+  for(let i=enemies.length-1;i>=0;i--){ const rem = enemies[i].update(dt); if(rem){ enemies.splice(i,1); continue; } }
+
+  if(!boss && now >= nextBossTime){ 
+    inBossFight = true; 
+    boss = new Boss(); 
+    enemies.length = 0; 
+    bossBullets.length = 0; 
+    
+    // Play boss sound
+    if (sfxEnabled) {
+      bossSound.currentTime = 0;
+      bossSound.play().catch(e => console.log("Audio play failed:", e));
+    }
+  }
+
+  if(boss){ boss.update(dt); }
+
+  for(let i=bossBullets.length-1;i>=0;i--){ const bb = bossBullets[i]; bb.y += bb.spd * dt/16; if(bb.y - bb.r > H + 40) bossBullets.splice(i,1); }
+
+  for(let bi=bullets.length-1; bi>=0; bi--){ 
+    const b = bullets[bi]; 
+    let removed = false; 
+    for(let ei=enemies.length-1; ei>=0; ei--){ 
+      const e = enemies[ei]; 
+      if(rectOverlap({x:b.x,y:b.y,w:b.w,h:b.h}, {x:e.x,y:e.y,w:e.size,h:e.size})){
+        enemies.splice(ei,1); bullets.splice(bi,1); score += 10; removed = true; 
+        
+        // Play explosion sound
+        if (sfxEnabled) {
+          explosionSound.currentTime = 0;
+          explosionSound.play().catch(e => console.log("Audio play failed:", e));
+        }
+        break; 
+      } 
+    } 
+    if(removed) continue; 
+    if(boss && rectOverlap({x:b.x,y:b.y,w:b.w,h:b.h},{x:boss.x,y:boss.y,w:boss.w,h:boss.h})){ 
+      bullets.splice(bi,1); boss.hp -= 1; 
+      
+      // Play hit sound
+      if (sfxEnabled) {
+        explosionSound.currentTime = 0;
+        explosionSound.play().catch(e => console.log("Audio play failed:", e));
+      }
+      
+      if(boss.hp <= 0){ 
+        score += 50; 
+        boss = null; 
+        inBossFight = false; 
+        nextBossTime = Date.now() + bossIntervalMs; 
+        
+        // Play explosion sound for boss defeat
+        if (sfxEnabled) {
+          explosionSound.currentTime = 0;
+          explosionSound.play().catch(e => console.log("Audio play failed:", e));
+        }
+      } 
+    }
+  }
+
+  for(let ei=enemies.length-1; ei>=0; ei--){ 
+    const e = enemies[ei]; 
+    if(rectOverlap({x:player.x,y:player.y,w:player.w,h:player.h},{x:e.x,y:e.y,w:e.size,h:e.size})){
+      enemies.splice(ei,1); player.lives -= 1; 
+      
+      // Play hit sound
+      if (sfxEnabled) {
+        explosionSound.currentTime = 0;
+        explosionSound.play().catch(e => console.log("Audio play failed:", e));
+      }
+      
+      if(player.lives <= 0) lose(); 
+    } 
+  }
+
+  for(let bi=bossBullets.length-1; bi>=0; bi--){ 
+    const bb = bossBullets[bi]; 
+    if(rectOverlap({x:player.x,y:player.y,w:player.w,h:player.h},{x:bb.x - bb.r/2, y:bb.y - bb.r/2, w:bb.r, h:bb.r})){ 
+      bossBullets.splice(bi,1); player.lives -= 1; 
+      
+      // Play hit sound
+      if (sfxEnabled) {
+        explosionSound.currentTime = 0;
+        explosionSound.play().catch(e => console.log("Audio play failed:", e));
+      }
+      
+      if(player.lives <= 0) lose(); 
+    } 
+  }
+}
+
+function lose(){ 
+  gameRunning = false; 
+  
+  // Stop background music
+  bgMusic.pause();
+  
+  // Play game over sound
+  if (sfxEnabled) {
+    gameOverSound.currentTime = 0;
+    gameOverSound.play().catch(e => console.log("Audio play failed:", e));
+  }
+  
+  const name = (nameInput.value || 'Player').substring(0,20);
+  const entry = { name, score, date: new Date().toLocaleString() };
+  const arr = JSON.parse(localStorage.getItem(leaderboardKey) || '[]'); 
+  arr.push(entry); arr.sort((a,b)=>b.score-a.score); if(arr.length>100) arr.length=100; 
+  localStorage.setItem(leaderboardKey, JSON.stringify(arr)); 
+  showGameOver(); 
+}
+
+function showGameOver(){ 
+  finalScore.textContent = `${nameInput.value || 'Player'} — Score: ${score}`; 
+  const arr = JSON.parse(localStorage.getItem(leaderboardKey) || '[]'); 
+  leaderboardBox.innerHTML = ''; 
+  if(arr.length===0){ leaderboardBox.innerHTML = '<div style="padding:10px">No scores yet</div>'; } 
+  else { arr.forEach((it,i)=>{ 
+    const el = document.createElement('div'); 
+    el.style.padding='6px 8px'; 
+    el.style.borderBottom='1px solid rgba(255,255,255,0.03)'; 
+    el.textContent = `${i+1}. ${it.name} — ${it.score} (${it.date})`; 
+    leaderboardBox.appendChild(el); 
+  }); } 
+  gameOverOverlay.style.display = 'flex'; 
+}
+
+function draw(){ 
+  ctx.clearRect(0,0,W,H); 
+  ctx.fillStyle='#011'; ctx.fillRect(0,0,W,H); 
+
+  player.draw();
+  for(const b of bullets) b.draw();
+  for(const e of enemies) e.draw();
+  if(boss) boss.draw();
+  ctx.fillStyle='#ff8a00'; for(const bb of bossBullets) ctx.beginPath(), ctx.arc(Math.round(bb.x), Math.round(bb.y), Math.round(bb.r/2), 0, Math.PI*2), ctx.fill();
+
+  ctx.fillStyle='#fff'; ctx.font='16px Arial'; 
+  ctx.fillText('Player: ' + (nameInput.value || 'Player'), 12, 22); 
+  ctx.fillText('Score: ' + score, 12, 44); 
+  ctx.fillText('Lives: ' + player.lives, 12, 66);
+  
+  if(!inBossFight) ctx.fillStyle='#ffd36b', ctx.fillText('Boss in: ' + Math.max(0, Math.ceil((nextBossTime - Date.now())/1000)) + 's', W-160, 22); 
+  else ctx.fillStyle='#ff9e9e', ctx.fillText('BOSS FIGHT', W-140, 22);
+}
+
+let last = performance.now();
+function loop(now){ 
+  if(!gameRunning) return; 
+  const dt = Math.min(40, now - last); 
+  last = now; 
+  update(dt, now); 
+  draw(); 
+  requestAnimationFrame(loop); 
+}
+
+window.addEventListener('keydown', (e)=>{
+  if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)) e.preventDefault(); 
+  keys[e.code==='Space' ? 'Space' : e.key] = true; 
+});
+window.addEventListener('keyup', (e)=>{ keys[e.code==='Space' ? 'Space' : e.key] = false; });
+
+// Audio control functions
+bgMusicToggle.addEventListener('click', () => {
+  bgMusicEnabled = !bgMusicEnabled;
+  if (bgMusicEnabled) {
+    bgMusic.play().catch(e => console.log("Audio play failed:", e));
+    bgMusicToggle.style.background = 'rgba(255, 255, 255, 0.2)';
+  } else {
+    bgMusic.pause();
+    bgMusicToggle.style.background = 'rgba(255, 0, 0, 0.3)';
+  }
+});
+
+sfxToggle.addEventListener('click', () => {
+  sfxEnabled = !sfxEnabled;
+  if (sfxEnabled) {
+    sfxToggle.style.background = 'rgba(255, 255, 255, 0.2)';
+  } else {
+    sfxToggle.style.background = 'rgba(255, 0, 0, 0.3)';
+  }
+});
+
+btnStart.addEventListener('click', ()=>{
+  const n = (nameInput.value || '').trim(); 
+  if(!n){ alert('Please enter a name'); return; } 
+  localStorage.setItem('ss_player_name', n); 
+  init(); 
+  startOverlay.style.display = 'none'; 
+  gameOverOverlay.style.display = 'none'; 
+  last = performance.now(); 
+  requestAnimationFrame(loop); 
+});
+
+btnRestart.addEventListener('click', ()=>{
+  gameOverOverlay.style.display = 'none'; 
+  startOverlay.style.display = 'flex'; 
+});
+
+const stored = localStorage.getItem('ss_player_name'); if(stored) nameInput.value = stored;
+})();
+</script>
+</body>
+</html>
