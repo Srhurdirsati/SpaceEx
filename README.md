@@ -52,13 +52,21 @@ cd space-shooter
 text
 space-shooter/
 ├── index.html          # Main game file
+
 ├── assets/             # Game assets
+
 │   ├── music.mp3       # Background music
+
 │   ├── explosion.mp3   # Explosion sound effect
+
 │   ├── gunfire.mp3     # Shooting sound effect
+
 │   ├── boss.mp3        # Boss appearance sound
+
 │   └── gameover.mp3    # Game over sound
+
 └── README.md           # This file
+
 
 
 ## 🎵 Audio Features
